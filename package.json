@@ -1,0 +1,48 @@
+{
+  "name": "cake-farm",
+  "version": "1.0.0",
+  "description": "",
+  "main": "truffle-config.js",
+  "directories": {
+    "test": "test"
+  },
+  "scripts": {
+    "test": "truffle test",
+    "flatten": "truffle-flattener ./contracts/NepCakeFarm.sol > ./contracts/.NepCakeFarm.flat.sol",
+    "coverage": "truffle run coverage"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/neptune-mutual/cake-farm.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/neptune-mutual/cake-farm/issues"
+  },
+  "homepage": "https://github.com/neptune-mutual/cake-farm#readme",
+  "standard": {
+    "env": [
+      "mocha"
+    ],
+    "global": [
+      "contract",
+      "artifacts",
+      "web3"
+    ]
+  },
+  "devDependencies": {
+    "bignumber.js": "^8.0.1",
+    "chai": "^4.3.4",
+    "chai-as-promised": "^7.1.1",
+    "chai-bignumber": "^3.0.0",
+    "luxon": "^1.26.0",
+    "openzeppelin-solidity": "^4.0.0",
+    "prettier": "^2.2.1",
+    "prettier-plugin-solidity": "*",
+    "solidity-coverage": "^0.7.16",
+    "standard": "^16.0.3",
+    "truffle-flattener": "^1.5.0"
+  }
+}
