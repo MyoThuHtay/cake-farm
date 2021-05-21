@@ -9,6 +9,11 @@ interface IFarm {
   event Withdrawn(address indexed account, uint256 amount);
 
   /**
+   * @dev Gets the total number of NEP allocated to be distributed as reward
+   */
+  function _totalRewardAllocation() external view returns (uint256);
+
+  /**
    * @dev Gets the number of blocks since last rewards
    * @param account Provide an address to get the blocks
    */

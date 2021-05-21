@@ -4,9 +4,11 @@ import "openzeppelin-solidity/contracts/security/Pausable.sol";
 import "openzeppelin-solidity/contracts/security/ReentrancyGuard.sol";
 import "./IFarm.sol";
 import "./NepBurner.sol";
+import "./Libraries/NTransferUtilV1.sol";
 
 contract NepCakeFarm is IFarm, Pausable, ReentrancyGuard, NepBurner {
   using SafeMath for uint256;
+  using NTransferUtilV1 for IERC20;
 
   uint256 public _pid; // PancakeSwap CAKE pool id
   uint256 public _nepUnitPerCakeUnitPerBlock;
@@ -18,6 +20,7 @@ contract NepCakeFarm is IFarm, Pausable, ReentrancyGuard, NepBurner {
   mapping(address => uint256) public _rewardHeights;
   mapping(address => uint256) public _depositHeights;
 
+  uint256 public override _totalRewardAllocation;
   uint256 public _totalCakeLocked;
   uint256 public _totalNepRewarded;
   uint256 public _minStakingPeriodInBlocks = 259200; // 24 hours in Binance Smart Chain
@@ -168,7 +171,7 @@ contract NepCakeFarm is IFarm, Pausable, ReentrancyGuard, NepBurner {
     }
 
     _totalNepRewarded = _totalNepRewarded.add(rewards);
-    _nepToken.transfer(account, rewards);
+    _nepToken.safeTransfer(account, rewards);
 
     emit RewardsWithdrawn(account, rewards);
   }
@@ -215,7 +218,8 @@ contract NepCakeFarm is IFarm, Pausable, ReentrancyGuard, NepBurner {
     address you = super._msgSender();
 
     if (amount > 0) {
-      _nepToken.transferFrom(you, address(this), amount);
+      _totalRewardAllocation = _totalRewardAllocation.add(amount);
+      _nepToken.safeTransferFrom(you, address(this), amount);
     }
 
     if (nepUnitPerLiquidityTokenUnitPerBlock > 0) {
@@ -241,7 +245,7 @@ contract NepCakeFarm is IFarm, Pausable, ReentrancyGuard, NepBurner {
     require(this.getRemainingToStake() >= amount, "Sorry, that exceeds target");
 
     address you = super._msgSender();
-    _cakeToken.transferFrom(you, address(this), amount);
+    _cakeToken.safeTransferFrom(you, address(this), amount);
 
     // First transfer your pending rewards
     _withdrawRewards(you);
@@ -289,7 +293,7 @@ contract NepCakeFarm is IFarm, Pausable, ReentrancyGuard, NepBurner {
     _reduceCakeMasterChefAllownace();
 
     // Transfer it back to you
-    _cakeToken.transfer(you, amount);
+    _cakeToken.safeTransfer(you, amount);
 
     super._commitLiquidity();
 
