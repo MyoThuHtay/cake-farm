@@ -4,6 +4,9 @@ const BigNumber = require('bignumber.js')
 require('chai').use(require('chai-as-promised')).use(require('chai-bignumber')(BigNumber)).should()
 
 const Farm = artifacts.require('./NepCakeFarm')
+const NTransferUtilV1 = artifacts.require('./NTransferUtilV1')
+const MaliciousToken = artifacts.require('./MaliciousToken')
+const NTransferUtilV1Intermediate = artifacts.require('./NTransferUtilV1Intermediate')
 const Destroyable = artifacts.require('./Destroyable')
 const FakeToken = artifacts.require('./Token')
 const FakeNEPToken = artifacts.require('./Token')
@@ -24,8 +27,69 @@ BigNumber.config({ EXPONENTIAL_AT: 30 })
 contract('NEP Cake Farm', function (accounts) {
   const ether = 1000000000000000000
   const million = 1000000
-
+  let TransferLib
   const [owner, alice, bob, mallory] = accounts // eslint-disable-line
+
+  before(async () => {
+    TransferLib = await NTransferUtilV1.new()
+    await Farm.link('NTransferUtilV1', TransferLib.address)
+    await NTransferUtilV1Intermediate.link('NTransferUtilV1', TransferLib.address)
+  })
+
+  describe('NTransferUtilV1', () => {
+    let intermediate, evil, nonEvil
+
+    beforeEach(async () => {
+      const amount = BigNumber(500 * million * ether)
+      evil = await MaliciousToken.new()
+      nonEvil = await FakeCAKEToken.new('Non Evil', 'NEV', amount)
+
+      intermediate = await NTransferUtilV1Intermediate.new()
+      await evil.mint(owner, amount)
+
+      await evil.transfer(intermediate.address, BigNumber(1000 * ether))
+      await nonEvil.transfer(intermediate.address, BigNumber(1000 * ether))
+
+      await evil.transfer(alice, BigNumber(1000 * ether))
+      await nonEvil.transfer(alice, BigNumber(1000 * ether))
+    })
+
+    it('accepts non-malicious transfers', async () => {
+      await intermediate.iTransfer(nonEvil.address, alice, BigNumber(100)).should.not.be.rejected
+    })
+
+    it('rejects transfer to zero address', async () => {
+      await intermediate.iTransfer(nonEvil.address, ZERO_X, BigNumber(1)).should.be.rejectedWith('Invalid recipient')
+    })
+
+    it('rejects zero value transfers', async () => {
+      await intermediate.iTransfer(nonEvil.address, alice, '0').should.be.rejectedWith('Invalid transfer amount')
+    })
+
+    it('rejects malicious transfers', async () => {
+      await intermediate.iTransfer(evil.address, alice, BigNumber(100)).should.be.rejectedWith('Invalid transfer')
+    })
+
+    it('accepts non-malicious approved transfers', async () => {
+      await nonEvil.approve(intermediate.address, BigNumber(100), { from: alice })
+      await intermediate.iTransferFrom(nonEvil.address, alice, bob, BigNumber(100), { from: alice }).should.not.be.rejected
+    })
+
+    it('rejects zero value approved transfers', async () => {
+      await nonEvil.approve(intermediate.address, BigNumber(100), { from: alice })
+      await intermediate.iTransferFrom(nonEvil.address, alice, bob, '0', { from: alice }).should.be.rejectedWith('Invalid transfer amount')
+    })
+
+    it('rejects approved transfers to zero address', async () => {
+      await nonEvil.approve(intermediate.address, BigNumber(100), { from: alice })
+      await intermediate.iTransferFrom(nonEvil.address, alice, ZERO_X, BigNumber(100), { from: alice }).should.be.rejectedWith('Invalid recipient')
+    })
+
+    it('rejects malicious approved transfers', async () => {
+      await evil.approve(intermediate.address, BigNumber(100), { from: alice })
+      await intermediate.iTransferFrom(evil.address, alice, bob, BigNumber(100), { from: alice }).should.be.rejectedWith('Invalid transfer')
+    })
+  })
 
   describe('Farming', () => {
     let cakeToken, nepToken, farm, cakeMasterChef, router
@@ -68,6 +132,13 @@ contract('NEP Cake Farm', function (accounts) {
 
       await nepToken.approve(farm.address, amount)
       await farm.setFarm(nepUnitPerCakeUnitPerBlock, maximumCakeForStaking, amount)
+    })
+
+    it('rejects zero value deposits', async () => {
+      const amount = BigNumber(0)
+
+      await cakeToken.approve(farm.address, amount, { from: alice })
+      await farm.deposit(amount, { from: alice }).should.be.rejectedWith('Invalid amount')
     })
 
     it('enables depositing CAKE', async () => {
@@ -147,6 +218,10 @@ contract('NEP Cake Farm', function (accounts) {
       const totalStake = BigNumber(stakes.filter(x => x.account === alice).map(x => x.amount).reduce((a, b) => a + b, 0))
 
       balance.toString(10).should.equal(totalStake.toString(10))
+    })
+
+    it('rejects zero value withdrawals', async () => {
+      await farm.withdraw('0').should.be.rejectedWith('Invalid')
     })
 
     it('checks if there is sufficient balance to withdraw', async () => {
@@ -404,6 +479,46 @@ contract('NEP Cake Farm', function (accounts) {
 
       balance = await fakeToken.balanceOf(farm.address)
       balance.toString().should.equal('0')
+    })
+  })
+
+  describe('Pausable', () => {
+    let farm
+
+    before(async () => {
+      const nepToken = await FakeNEPToken.new('Fake NEP', 'NEP', BigNumber(500 * million * ether))
+      const cakeToken = await FakeCAKEToken.new('Fake CAKE', 'CAKE', BigNumber(500 * million * ether))
+      const cakeMasterChef = await FakeCakeMasterChef.new(cakeToken.address)
+      const router = await FakePancakeRouter.new()
+
+      farm = await Farm.new(nepToken.address, cakeToken.address, cakeMasterChef.address, 1, router.address, burnPath)
+    })
+
+    it('allows pausing the contract', async () => {
+      await farm.pause().should.not.be.rejected
+      await farm.pause().should.be.rejected
+    })
+
+    it('allows unpausing the contract', async () => {
+      await farm.unpause().should.not.be.rejected
+      await farm.unpause().should.be.rejected
+    })
+  })
+
+  describe('Burner', () => {
+    let farm
+
+    before(async () => {
+      const nepToken = await FakeNEPToken.new('Fake NEP', 'NEP', BigNumber(500 * million * ether))
+      const cakeToken = await FakeCAKEToken.new('Fake CAKE', 'CAKE', BigNumber(500 * million * ether))
+      const cakeMasterChef = await FakeCakeMasterChef.new(cakeToken.address)
+      const router = await FakePancakeRouter.new()
+
+      farm = await Farm.new(nepToken.address, cakeToken.address, cakeMasterChef.address, 1, router.address, burnPath)
+    })
+
+    it('allows changing the burn path', async () => {
+      await farm.updateBurnPath(burnPath).should.not.be.rejected
     })
   })
 })

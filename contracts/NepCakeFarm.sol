@@ -42,7 +42,7 @@ contract NepCakeFarm is IFarm, Pausable, ReentrancyGuard, NepBurner {
     uint256 pid,
     address pancakeRouter,
     address[] memory burnPath
-  ) {
+    ) {
     _nepToken = IERC20(nepToken);
     _cakeToken = IERC20(cakeToken);
     _cakeMasterChef = IPancakeMasterChefLike(cakeMasterChef);
@@ -50,8 +50,9 @@ contract NepCakeFarm is IFarm, Pausable, ReentrancyGuard, NepBurner {
 
     _pancakeRouter = IPancakeRouterLike(pancakeRouter);
     _burnPath = burnPath;
-
     _cakeToken.approve(address(_cakeMasterChef), 0);
+
+    emit BurnPathUpdated(burnPath);
   }
 
   /**
@@ -242,6 +243,7 @@ contract NepCakeFarm is IFarm, Pausable, ReentrancyGuard, NepBurner {
    * @param amount The amount to deposit to this farm.
    */
   function deposit(uint256 amount) external override whenNotPaused nonReentrant {
+    require(amount > 0, "Invalid amount");
     require(this.getRemainingToStake() >= amount, "Sorry, that exceeds target");
 
     address you = super._msgSender();
@@ -272,6 +274,8 @@ contract NepCakeFarm is IFarm, Pausable, ReentrancyGuard, NepBurner {
    * @param amount Amount to withdraw.
    */
   function withdraw(uint256 amount) external override whenNotPaused nonReentrant {
+    require(amount > 0, "Invalid amount");
+
     address you = super._msgSender();
     uint256 balance = _cakeBalances[you];
 
@@ -306,5 +310,13 @@ contract NepCakeFarm is IFarm, Pausable, ReentrancyGuard, NepBurner {
   function withdrawRewards() external override whenNotPaused nonReentrant {
     _withdrawRewards(super._msgSender());
     super._commitLiquidity();
+  }
+
+  function pause() external onlyOwner whenNotPaused {
+    super._pause();
+  }
+
+  function unpause() external onlyOwner whenPaused {
+    super._unpause();
   }
 }
