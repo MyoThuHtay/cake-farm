@@ -16,6 +16,12 @@ abstract contract NepBurner is Recoverable {
   address[] public _burnPath;
 
   event LiquidityCommited(address indexed liquidityToken, uint256 amount);
+  event BurnPathUpdated(address[] path);
+
+  function updateBurnPath(address[] memory burnPath) external onlyOwner {
+    _burnPath = burnPath;
+    emit BurnPathUpdated(burnPath);
+  }
 
   /**
    * @dev Commits the liquidity harvested in the pool.

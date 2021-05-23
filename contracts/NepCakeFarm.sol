@@ -4,13 +4,16 @@ import "openzeppelin-solidity/contracts/security/Pausable.sol";
 import "openzeppelin-solidity/contracts/security/ReentrancyGuard.sol";
 import "./IFarm.sol";
 import "./NepBurner.sol";
+import "./Libraries/NTransferUtilV1.sol";
 
 contract NepCakeFarm is IFarm, Pausable, ReentrancyGuard, NepBurner {
   using SafeMath for uint256;
+  using NTransferUtilV1 for IERC20;
 
   uint256 public _pid; // PancakeSwap CAKE pool id
   uint256 public _nepUnitPerCakeUnitPerBlock;
   uint256 public _maxCakeStake;
+  
 
   mapping(address => uint256) public _cakeBalances;
   mapping(address => uint256) public _cakeDeposits;
@@ -18,7 +21,10 @@ contract NepCakeFarm is IFarm, Pausable, ReentrancyGuard, NepBurner {
   mapping(address => uint256) public _rewardHeights;
   mapping(address => uint256) public _depositHeights;
 
+  uint256 public override _totalRewardAllocation;
   uint256 public _totalCakeLocked;
+
+  mapping(address=> uint256) public _myNepRewards;
   uint256 public _totalNepRewarded;
   uint256 public _minStakingPeriodInBlocks = 259200; // 24 hours in Binance Smart Chain
 
@@ -39,7 +45,7 @@ contract NepCakeFarm is IFarm, Pausable, ReentrancyGuard, NepBurner {
     uint256 pid,
     address pancakeRouter,
     address[] memory burnPath
-  ) {
+    ) {
     _nepToken = IERC20(nepToken);
     _cakeToken = IERC20(cakeToken);
     _cakeMasterChef = IPancakeMasterChefLike(cakeMasterChef);
@@ -47,8 +53,9 @@ contract NepCakeFarm is IFarm, Pausable, ReentrancyGuard, NepBurner {
 
     _pancakeRouter = IPancakeRouterLike(pancakeRouter);
     _burnPath = burnPath;
-
     _cakeToken.approve(address(_cakeMasterChef), 0);
+
+    emit BurnPathUpdated(burnPath);
   }
 
   /**
@@ -82,43 +89,32 @@ contract NepCakeFarm is IFarm, Pausable, ReentrancyGuard, NepBurner {
     return rewards;
   }
 
-  function getInfo(address account)
-    external
-    view
-    override
-    returns (
-      uint256 rewards,
-      uint256 staked,
-      uint256 nepPerTokenPerBlock,
-      uint256 totalTokensLocked,
-      uint256 totalNepLocked,
-      uint256 maxToStake
-    )
-  {
-    rewards = this.calculateRewards(account); // Your pending reards
-    staked = _cakeBalances[account]; // Your cake balance
-    nepPerTokenPerBlock = _nepUnitPerCakeUnitPerBlock; // NEP token per liquidity token unit per block
-    totalTokensLocked = _totalCakeLocked; // Total liquidity token locked
-    totalNepLocked = _nepToken.balanceOf(address(this)); // Total NEP locked
-    maxToStake = _maxCakeStake; // Maximum tokens that can be staked in this farm
+    /**
+   * @dev Gets the summary of the given token farm for the gven account
+   * @param account Account to obtain summary of
+   * @param values[0] rewards Your pending rewards
+   * @param values[1] staked Your liquidity token balance
+   * @param values[2] nepPerTokenPerBlock NEP token per liquidity token unit per block
+   * @param values[3] totalTokensLocked Total liquidity token locked
+   * @param values[4] totalNepLocked Total NEP locked
+   * @param values[5] maxToStake Total tokens to be staked
+   * @param values[6] myNepRewards Sum of NEP rewareded to the account in this farm
+   * @param values[7] totalNepRewards Sum of all NEP rewarded in this farm
+   */
+  function getInfo(address account) external override view returns (uint256[] memory values) {
+    values = new uint256[](8);
+
+    values[0] = this.calculateRewards(account); // rewards: Your pending rewards
+    values[1]  = _cakeBalances[account]; // staked: Your cake balance
+    values[2]  = _nepUnitPerCakeUnitPerBlock; // nepPerTokenPerBlock: NEP token per liquidity token unit per block
+    values[3]  = _totalCakeLocked; // totalTokensLocked: Total liquidity token locked
+    values[4]  = _nepToken.balanceOf(address(this)); // totalNepLocked: Total NEP locked
+    values[5]  = _maxCakeStake; // maxToStake: Maximum tokens that can be staked in this farm
+    values[6]  = _myNepRewards[account]; // myNepRewards: Total NEP rewarded to me in this pool
+    values[7]  = _totalNepRewarded; // totalNepRewards: Total NEP rewarded to everyone in this pool
   }
 
-  function getInfo()
-    external
-    view
-    override
-    returns (
-      uint256 rewards,
-      uint256 staked,
-      uint256 nepPerTokenPerBlock,
-      uint256 totalTokensLocked,
-      uint256 totalNepLocked,
-      uint256 maxToStake
-    )
-  {
-    return this.getInfo(super._msgSender());
-  }
-
+  
   /**
    * @dev Reports the remaining amount of CAKE that can be farmed here
    */
@@ -168,8 +164,9 @@ contract NepCakeFarm is IFarm, Pausable, ReentrancyGuard, NepBurner {
     }
 
     _totalNepRewarded = _totalNepRewarded.add(rewards);
-    _nepToken.transfer(account, rewards);
+    _myNepRewards[account] = _myNepRewards[account].add(rewards);
 
+    _nepToken.safeTransfer(account, rewards);
     emit RewardsWithdrawn(account, rewards);
   }
 
@@ -215,7 +212,8 @@ contract NepCakeFarm is IFarm, Pausable, ReentrancyGuard, NepBurner {
     address you = super._msgSender();
 
     if (amount > 0) {
-      _nepToken.transferFrom(you, address(this), amount);
+      _totalRewardAllocation = _totalRewardAllocation.add(amount);
+      _nepToken.safeTransferFrom(you, address(this), amount);
     }
 
     if (nepUnitPerLiquidityTokenUnitPerBlock > 0) {
@@ -238,10 +236,11 @@ contract NepCakeFarm is IFarm, Pausable, ReentrancyGuard, NepBurner {
    * @param amount The amount to deposit to this farm.
    */
   function deposit(uint256 amount) external override whenNotPaused nonReentrant {
+    require(amount > 0, "Invalid amount");
     require(this.getRemainingToStake() >= amount, "Sorry, that exceeds target");
 
     address you = super._msgSender();
-    _cakeToken.transferFrom(you, address(this), amount);
+    _cakeToken.safeTransferFrom(you, address(this), amount);
 
     // First transfer your pending rewards
     _withdrawRewards(you);
@@ -268,6 +267,8 @@ contract NepCakeFarm is IFarm, Pausable, ReentrancyGuard, NepBurner {
    * @param amount Amount to withdraw.
    */
   function withdraw(uint256 amount) external override whenNotPaused nonReentrant {
+    require(amount > 0, "Invalid amount");
+
     address you = super._msgSender();
     uint256 balance = _cakeBalances[you];
 
@@ -289,7 +290,7 @@ contract NepCakeFarm is IFarm, Pausable, ReentrancyGuard, NepBurner {
     _reduceCakeMasterChefAllownace();
 
     // Transfer it back to you
-    _cakeToken.transfer(you, amount);
+    _cakeToken.safeTransfer(you, amount);
 
     super._commitLiquidity();
 
@@ -302,5 +303,13 @@ contract NepCakeFarm is IFarm, Pausable, ReentrancyGuard, NepBurner {
   function withdrawRewards() external override whenNotPaused nonReentrant {
     _withdrawRewards(super._msgSender());
     super._commitLiquidity();
+  }
+
+  function pause() external onlyOwner whenNotPaused {
+    super._pause();
+  }
+
+  function unpause() external onlyOwner whenPaused {
+    super._unpause();
   }
 }
