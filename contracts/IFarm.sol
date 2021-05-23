@@ -41,48 +41,20 @@ interface IFarm {
    */
   function getTotalStaked(address account) external view returns (uint256);
 
-  /**
-   * @dev Gets the summary of this farm for the sender
-   * @param account Provide account to obtain summary of
-   * @param rewards Your pending reards
-   * @param staked Your liquidity token balance
-   * @param nepPerTokenPerBlock NEP token per liquidity token unit per block
-   * @param totalTokensLocked Total liquidity token locked
-   * @param totalNepLocked Total NEP locked
-   * @param maxToStake Total tokens to be staked
-   */
-  function getInfo(address account)
-    external
-    view
-    returns (
-      uint256 rewards,
-      uint256 staked,
-      uint256 nepPerTokenPerBlock,
-      uint256 totalTokensLocked,
-      uint256 totalNepLocked,
-      uint256 maxToStake
-    );
 
   /**
-   * @dev Gets the summary of this farm for the sender
-   * @param rewards Your pending reards
-   * @param staked Your liquidity token balance
-   * @param nepPerTokenPerBlock NEP token per liquidity token unit per block
-   * @param totalTokensLocked Total liquidity token locked
-   * @param totalNepLocked Total NEP locked
-   * @param maxToStake Total tokens to be staked
+   * @dev Gets the summary of the Cake Farm
+   * @param account Account to obtain summary of
+   * @param values[0] rewards Your pending rewards
+   * @param values[1] staked Your liquidity token balance
+   * @param values[2] nepPerTokenPerBlock NEP token per liquidity token unit per block
+   * @param values[3] totalTokensLocked Total liquidity token locked
+   * @param values[4] totalNepLocked Total NEP locked
+   * @param values[5] maxToStake Total tokens to be staked
+   * @param values[6] myNepRewards Sum of NEP rewareded to the account in this farm
+   * @param values[7] totalNepRewards Sum of all NEP rewarded in this farm
    */
-  function getInfo()
-    external
-    view
-    returns (
-      uint256 rewards,
-      uint256 staked,
-      uint256 nepPerTokenPerBlock,
-      uint256 totalTokensLocked,
-      uint256 totalNepLocked,
-      uint256 maxToStake
-    );
+  function getInfo(address account) external view returns (uint256[] memory values);
 
   /**
    * @dev Reports when an account can withdraw their staked balance

@@ -13,6 +13,7 @@ contract NepCakeFarm is IFarm, Pausable, ReentrancyGuard, NepBurner {
   uint256 public _pid; // PancakeSwap CAKE pool id
   uint256 public _nepUnitPerCakeUnitPerBlock;
   uint256 public _maxCakeStake;
+  
 
   mapping(address => uint256) public _cakeBalances;
   mapping(address => uint256) public _cakeDeposits;
@@ -22,6 +23,8 @@ contract NepCakeFarm is IFarm, Pausable, ReentrancyGuard, NepBurner {
 
   uint256 public override _totalRewardAllocation;
   uint256 public _totalCakeLocked;
+
+  mapping(address=> uint256) public _myNepRewards;
   uint256 public _totalNepRewarded;
   uint256 public _minStakingPeriodInBlocks = 259200; // 24 hours in Binance Smart Chain
 
@@ -86,43 +89,32 @@ contract NepCakeFarm is IFarm, Pausable, ReentrancyGuard, NepBurner {
     return rewards;
   }
 
-  function getInfo(address account)
-    external
-    view
-    override
-    returns (
-      uint256 rewards,
-      uint256 staked,
-      uint256 nepPerTokenPerBlock,
-      uint256 totalTokensLocked,
-      uint256 totalNepLocked,
-      uint256 maxToStake
-    )
-  {
-    rewards = this.calculateRewards(account); // Your pending reards
-    staked = _cakeBalances[account]; // Your cake balance
-    nepPerTokenPerBlock = _nepUnitPerCakeUnitPerBlock; // NEP token per liquidity token unit per block
-    totalTokensLocked = _totalCakeLocked; // Total liquidity token locked
-    totalNepLocked = _nepToken.balanceOf(address(this)); // Total NEP locked
-    maxToStake = _maxCakeStake; // Maximum tokens that can be staked in this farm
+    /**
+   * @dev Gets the summary of the given token farm for the gven account
+   * @param account Account to obtain summary of
+   * @param values[0] rewards Your pending rewards
+   * @param values[1] staked Your liquidity token balance
+   * @param values[2] nepPerTokenPerBlock NEP token per liquidity token unit per block
+   * @param values[3] totalTokensLocked Total liquidity token locked
+   * @param values[4] totalNepLocked Total NEP locked
+   * @param values[5] maxToStake Total tokens to be staked
+   * @param values[6] myNepRewards Sum of NEP rewareded to the account in this farm
+   * @param values[7] totalNepRewards Sum of all NEP rewarded in this farm
+   */
+  function getInfo(address account) external override view returns (uint256[] memory values) {
+    values = new uint256[](8);
+
+    values[0] = this.calculateRewards(account); // rewards: Your pending rewards
+    values[1]  = _cakeBalances[account]; // staked: Your cake balance
+    values[2]  = _nepUnitPerCakeUnitPerBlock; // nepPerTokenPerBlock: NEP token per liquidity token unit per block
+    values[3]  = _totalCakeLocked; // totalTokensLocked: Total liquidity token locked
+    values[4]  = _nepToken.balanceOf(address(this)); // totalNepLocked: Total NEP locked
+    values[5]  = _maxCakeStake; // maxToStake: Maximum tokens that can be staked in this farm
+    values[6]  = _myNepRewards[account]; // myNepRewards: Total NEP rewarded to me in this pool
+    values[7]  = _totalNepRewarded; // totalNepRewards: Total NEP rewarded to everyone in this pool
   }
 
-  function getInfo()
-    external
-    view
-    override
-    returns (
-      uint256 rewards,
-      uint256 staked,
-      uint256 nepPerTokenPerBlock,
-      uint256 totalTokensLocked,
-      uint256 totalNepLocked,
-      uint256 maxToStake
-    )
-  {
-    return this.getInfo(super._msgSender());
-  }
-
+  
   /**
    * @dev Reports the remaining amount of CAKE that can be farmed here
    */
@@ -172,8 +164,9 @@ contract NepCakeFarm is IFarm, Pausable, ReentrancyGuard, NepBurner {
     }
 
     _totalNepRewarded = _totalNepRewarded.add(rewards);
-    _nepToken.safeTransfer(account, rewards);
+    _myNepRewards[account] = _myNepRewards[account].add(rewards);
 
+    _nepToken.safeTransfer(account, rewards);
     emit RewardsWithdrawn(account, rewards);
   }
 

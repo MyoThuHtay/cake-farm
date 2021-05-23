@@ -356,13 +356,15 @@ contract('NEP Cake Farm', function (accounts) {
     })
 
     it('produces summary info', async () => {
-      const info = await farm.getInfo()
-      info.rewards.should.bignumber
-      info.staked.should.bignumber
-      info.nepPerTokenPerBlock.should.bignumber
-      info.totalTokensLocked.should.bignumber
-      info.totalNepLocked.should.bignumber
-      info.maxToStake.should.bignumber
+      const info = await farm.getInfo(owner)
+      const [rewards, staked, nepPerTokenPerBlock, totalTokensLocked, totalNepLocked, maxToStake] = info
+
+      rewards.should.bignumber
+      staked.should.bignumber
+      nepPerTokenPerBlock.should.bignumber
+      totalTokensLocked.should.bignumber
+      totalNepLocked.should.bignumber
+      maxToStake.should.bignumber
     })
 
     it('accurately returns remaining amount that can be staked', async () => {
