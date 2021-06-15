@@ -13,7 +13,6 @@ contract NepCakeFarm is IFarm, Pausable, ReentrancyGuard, NepBurner {
   uint256 public _pid; // PancakeSwap CAKE pool id
   uint256 public _nepUnitPerCakeUnitPerBlock;
   uint256 public _maxCakeStake;
-  
 
   mapping(address => uint256) public _cakeBalances;
   mapping(address => uint256) public _cakeDeposits;
@@ -22,11 +21,12 @@ contract NepCakeFarm is IFarm, Pausable, ReentrancyGuard, NepBurner {
   mapping(address => uint256) public _depositHeights;
 
   uint256 public override _totalRewardAllocation;
+  uint256 public override _remainingNEPRewards;
   uint256 public _totalCakeLocked;
 
-  mapping(address=> uint256) public _myNepRewards;
+  mapping(address => uint256) public _myNepRewards;
   uint256 public _totalNepRewarded;
-  uint256 public _minStakingPeriodInBlocks = 259200; // 24 hours in Binance Smart Chain
+  uint256 public _minStakingPeriodInBlocks = 86400; // 24 hours in Binance Smart Chain
 
   event MinStakingPeriodUpdated(uint256 previous, uint256 current);
   event FarmSet(address indexed account, uint256 nepUnitPerLiquidityTokenUnitPerBlock, uint256 maxLiquidityTokenStake, uint256 amount);
@@ -45,17 +45,8 @@ contract NepCakeFarm is IFarm, Pausable, ReentrancyGuard, NepBurner {
     uint256 pid,
     address pancakeRouter,
     address[] memory burnPath
-    ) {
-    _nepToken = IERC20(nepToken);
-    _cakeToken = IERC20(cakeToken);
-    _cakeMasterChef = IPancakeMasterChefLike(cakeMasterChef);
-    _pid = pid;
-
-    _pancakeRouter = IPancakeRouterLike(pancakeRouter);
-    _burnPath = burnPath;
-    _cakeToken.approve(address(_cakeMasterChef), 0);
-
-    emit BurnPathUpdated(burnPath);
+  ) {
+    initialize(nepToken, cakeToken, cakeMasterChef, pid, pancakeRouter, burnPath);
   }
 
   /**
@@ -65,11 +56,11 @@ contract NepCakeFarm is IFarm, Pausable, ReentrancyGuard, NepBurner {
   function getTotalBlocksSinceLastReward(address account) external view override returns (uint256) {
     uint256 from = _rewardHeights[account];
 
-    if (from == 0) {
-      return 0;
+    if (from > 0) {
+      return block.number.sub(from);
     }
 
-    return block.number.sub(from);
+    return 0;
   }
 
   /**
@@ -89,7 +80,7 @@ contract NepCakeFarm is IFarm, Pausable, ReentrancyGuard, NepBurner {
     return rewards;
   }
 
-    /**
+  /**
    * @dev Gets the summary of the given token farm for the gven account
    * @param account Account to obtain summary of
    * @param values[0] rewards Your pending rewards
@@ -100,21 +91,24 @@ contract NepCakeFarm is IFarm, Pausable, ReentrancyGuard, NepBurner {
    * @param values[5] maxToStake Total tokens to be staked
    * @param values[6] myNepRewards Sum of NEP rewareded to the account in this farm
    * @param values[7] totalNepRewards Sum of all NEP rewarded in this farm
+   * @param values[8] rewardAllocation NEP reward allocation for this farm
+   * @param values[9] remainingNEPRewards Remaining NEP in this farm
    */
-  function getInfo(address account) external override view returns (uint256[] memory values) {
-    values = new uint256[](8);
+  function getInfo(address account) external view override returns (uint256[] memory values) {
+    values = new uint256[](10);
 
     values[0] = this.calculateRewards(account); // rewards: Your pending rewards
-    values[1]  = _cakeBalances[account]; // staked: Your cake balance
-    values[2]  = _nepUnitPerCakeUnitPerBlock; // nepPerTokenPerBlock: NEP token per liquidity token unit per block
-    values[3]  = _totalCakeLocked; // totalTokensLocked: Total liquidity token locked
-    values[4]  = _nepToken.balanceOf(address(this)); // totalNepLocked: Total NEP locked
-    values[5]  = _maxCakeStake; // maxToStake: Maximum tokens that can be staked in this farm
-    values[6]  = _myNepRewards[account]; // myNepRewards: Total NEP rewarded to me in this pool
-    values[7]  = _totalNepRewarded; // totalNepRewards: Total NEP rewarded to everyone in this pool
+    values[1] = _cakeBalances[account]; // staked: Your cake balance
+    values[2] = _nepUnitPerCakeUnitPerBlock; // nepPerTokenPerBlock: NEP token per liquidity token unit per block
+    values[3] = _totalCakeLocked; // totalTokensLocked: Total liquidity token locked
+    values[4] = _nepToken.balanceOf(address(this)); // totalNepLocked: Total NEP locked
+    values[5] = _maxCakeStake; // maxToStake: Maximum tokens that can be staked in this farm
+    values[6] = _myNepRewards[account]; // myNepRewards: Total NEP rewarded to me in this pool
+    values[7] = _totalNepRewarded; // totalNepRewards: Total NEP rewarded to everyone in this pool
+    values[8] = _totalRewardAllocation; // rewardAllocation: NEP allocated to be rewarded
+    values[9] = _remainingNEPRewards; // totalNepRewards: Total NEP rewarded to everyone in this pool
   }
 
-  
   /**
    * @dev Reports the remaining amount of CAKE that can be farmed here
    */
@@ -176,7 +170,7 @@ contract NepCakeFarm is IFarm, Pausable, ReentrancyGuard, NepBurner {
    */
   function _approveCakeMasterChef(uint256 toApprove) private {
     address cakeMasterChef = address(_cakeMasterChef);
-    _cakeToken.approve(cakeMasterChef, toApprove);
+    require(_cakeToken.approve(cakeMasterChef, toApprove), "Chef approval failed");
     emit LiquidityTokenFarmingApproved(toApprove);
   }
 
@@ -185,46 +179,8 @@ contract NepCakeFarm is IFarm, Pausable, ReentrancyGuard, NepBurner {
    */
   function _reduceCakeMasterChefAllownace() private {
     address cakeMasterChef = address(_cakeMasterChef);
-    _cakeToken.approve(cakeMasterChef, 0);
+    require(_cakeToken.approve(cakeMasterChef, 0), "Reducing chef approval failed");
     emit LiquidityTokenFarmingApprovalReduced(0);
-  }
-
-  /**
-   * @dev Sets minimum staking period
-   * @param value Provide value as number of blocks to wait for
-   */
-  function setMinStakingPeriodInBlocks(uint256 value) external onlyOwner {
-    emit MinStakingPeriodUpdated(_minStakingPeriodInBlocks, value);
-    _minStakingPeriodInBlocks = value;
-  }
-
-  /**
-   * @dev Sets parameters to start the farm
-   * @param nepUnitPerLiquidityTokenUnitPerBlock Lowest unit of NEP rewarded per each lowest unit of CAKE per each block advanced
-   * @param maxLiquidityTokenStake Maximum CAKE to stake. Does not accept any more CAKE than this
-   * @param amount Amount of NEP to transfer to this farming contract
-   */
-  function setFarm(
-    uint256 nepUnitPerLiquidityTokenUnitPerBlock,
-    uint256 maxLiquidityTokenStake,
-    uint256 amount
-  ) external onlyOwner {
-    address you = super._msgSender();
-
-    if (amount > 0) {
-      _totalRewardAllocation = _totalRewardAllocation.add(amount);
-      _nepToken.safeTransferFrom(you, address(this), amount);
-    }
-
-    if (nepUnitPerLiquidityTokenUnitPerBlock > 0) {
-      _nepUnitPerCakeUnitPerBlock = nepUnitPerLiquidityTokenUnitPerBlock;
-    }
-
-    if (maxLiquidityTokenStake > 0) {
-      _maxCakeStake = maxLiquidityTokenStake;
-    }
-
-    emit FarmSet(you, nepUnitPerLiquidityTokenUnitPerBlock, maxLiquidityTokenStake, amount);
   }
 
   /**
@@ -303,6 +259,65 @@ contract NepCakeFarm is IFarm, Pausable, ReentrancyGuard, NepBurner {
   function withdrawRewards() external override whenNotPaused nonReentrant {
     _withdrawRewards(super._msgSender());
     super._commitLiquidity();
+  }
+
+  /**
+   * @dev Sets parameters to start the farm
+   * @param nepUnitPerLiquidityTokenUnitPerBlock Lowest unit of NEP rewarded per each lowest unit of CAKE per each block advanced
+   * @param maxLiquidityTokenStake Maximum CAKE to stake. Does not accept any more CAKE than this
+   * @param amount Amount of NEP to transfer to this farming contract
+   */
+
+  function setFarm(
+    uint256 nepUnitPerLiquidityTokenUnitPerBlock,
+    uint256 maxLiquidityTokenStake,
+    uint256 amount
+  ) external onlyOwner {
+    address you = super._msgSender();
+
+    if (amount > 0) {
+      _totalRewardAllocation = _totalRewardAllocation.add(amount);
+      _nepToken.safeTransferFrom(you, address(this), amount);
+    }
+
+    if (nepUnitPerLiquidityTokenUnitPerBlock > 0) {
+      _nepUnitPerCakeUnitPerBlock = nepUnitPerLiquidityTokenUnitPerBlock;
+    }
+
+    if (maxLiquidityTokenStake > 0) {
+      _maxCakeStake = maxLiquidityTokenStake;
+    }
+
+    emit FarmSet(you, nepUnitPerLiquidityTokenUnitPerBlock, maxLiquidityTokenStake, amount);
+  }
+
+  /**
+   * @dev Sets minimum staking period
+   * @param value Provide value as number of blocks to wait for
+   */
+  function setMinStakingPeriodInBlocks(uint256 value) external onlyOwner {
+    emit MinStakingPeriodUpdated(_minStakingPeriodInBlocks, value);
+    _minStakingPeriodInBlocks = value;
+  }
+
+   function initialize(
+    address nepToken,
+    address cakeToken,
+    address cakeMasterChef,
+    uint256 pid,
+    address pancakeRouter,
+    address[] memory burnPath
+  ) public onlyOwner {
+    _nepToken = IERC20(nepToken);
+    _cakeToken = IERC20(cakeToken);
+    _cakeMasterChef = IPancakeMasterChefLike(cakeMasterChef);
+    _pid = pid;
+
+    _pancakeRouter = IPancakeRouterLike(pancakeRouter);
+    _burnPath = burnPath;
+    require(_cakeToken.approve(address(_cakeMasterChef), 0), "Approval failed");
+
+    emit BurnPathUpdated(burnPath);
   }
 
   function pause() external onlyOwner whenNotPaused {
