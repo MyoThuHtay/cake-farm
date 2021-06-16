@@ -33,14 +33,16 @@ abstract contract NepBurner is Recoverable {
     _cakeMasterChef.leaveStaking(0);
     uint256 amount = _cakeToken.balanceOf(address(this));
 
+    // slither-disable-next-line incorrect-equality
     if (amount == 0) {
       return;
     }
 
-    _cakeToken.approve(address(_pancakeRouter), amount);
+    require(_cakeToken.approve(address(_pancakeRouter), amount), "Pancake Router approval failed");
 
-    // solhint-disable-next-line not-rely-on-time
+    // slither-disable-next-line unused-return
     _pancakeRouter.swapExactTokensForTokens(amount, 0, _burnPath, 0x0000000000000000000000000000000000000001, block.timestamp.add(1 hours));
+    // solhint-disable-previous-line not-rely-on-time
     emit LiquidityCommited(address(_cakeToken), amount);
   }
 }

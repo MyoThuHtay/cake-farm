@@ -8,8 +8,9 @@
   },
   "scripts": {
     "test": "truffle test",
-    "flatten": "truffle-flattener ./contracts/NepCakeFarm.sol > ./contracts/.NepCakeFarm.flat.sol",
-    "coverage": "truffle run coverage"
+    "flatten": "flatsol ./contracts/NepCakeFarm.sol > ./.flatsol/NepCakeFarm.sol",
+    "coverage": "truffle run coverage",
+    "slither": "slither ."
   },
   "repository": {
     "type": "git",

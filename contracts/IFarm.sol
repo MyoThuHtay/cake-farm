@@ -14,6 +14,11 @@ interface IFarm {
   function _totalRewardAllocation() external view returns (uint256);
 
   /**
+   * @dev Gets the remaining number of NEP tokens in this farm to be distributed as reward
+   */
+  function _remainingNEPRewards() external view returns (uint256);
+
+  /**
    * @dev Gets the number of blocks since last rewards
    * @param account Provide an address to get the blocks
    */
@@ -53,6 +58,7 @@ interface IFarm {
    * @param values[5] maxToStake Total tokens to be staked
    * @param values[6] myNepRewards Sum of NEP rewareded to the account in this farm
    * @param values[7] totalNepRewards Sum of all NEP rewarded in this farm
+   * @param values[8] remainingNEPRewards Remaining NEP in this farm
    */
   function getInfo(address account) external view returns (uint256[] memory values);
 
